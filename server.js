@@ -257,7 +257,7 @@ app.get('/api/auth/google', (req, res) => {
 
 // Google OAuth Callback
 app.get('/api/auth/google/callback', async (req, res) => {
-  const { code, state: redirectTo } = req.query;
+  const { code, state } = req.query;
 
   if (!code) {
     return res.status(400).json({ error: 'Authorization code is missing.' });
