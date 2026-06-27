@@ -16,9 +16,11 @@ if (!connectionString) {
   console.warn('WARNING: DATABASE_URL is not set. Database operations will fail.');
 }
 
+const hasSsl = isProduction || (connectionString && connectionString.includes('render.com'));
+
 export const pool = new Pool({
   connectionString,
-  ssl: isProduction ? { rejectUnauthorized: false } : false,
+  ssl: hasSsl ? { rejectUnauthorized: false } : false,
 });
 
 export const query = (text, params) => pool.query(text, params);
@@ -122,7 +124,61 @@ export const initDb = async () => {
       );
     `);
 
+    // 7.5 Create site_content table
+    await query(`
+      CREATE TABLE IF NOT EXISTS site_content (
+        key VARCHAR(255) PRIMARY KEY,
+        value JSONB NOT NULL
+      );
+    `);
+
     console.log('Database tables verified/created successfully.');
+
+    // 7.8 Seed default site configurations
+    const defaultSettings = [
+      {
+        key: 'new_ins',
+        value: {
+          heading: 'New Ins',
+          description: 'Fresh arrivals, handpicked for you.',
+          product_ids: []
+        }
+      },
+      {
+        key: 'collection_section',
+        value: {
+          title: 'Our Collection',
+          description: 'Shop the finest quality luxury wigs.',
+          image_url: '/logo.svg'
+        }
+      },
+      {
+        key: 'featured_collection',
+        value: {
+          product_id: null,
+          heading: 'Featured Collection',
+          description: 'Soft, full, and effortlessly beautiful — our Luxury Deep Wave Wig is crafted to give you a flawless, natural look with rich volume and a silky finish.'
+        }
+      },
+      {
+        key: 'stay_connected',
+        value: {
+          videos: [
+            { id: 1, videoUrl: '/video1.mp4', alt: 'TikTok Look 1' },
+            { id: 2, videoUrl: '/video2.mp4', alt: 'TikTok Look 2' },
+            { id: 3, videoUrl: '/video3.mp4', alt: 'TikTok Look 3' },
+            { id: 4, videoUrl: '/video4.mp4', alt: 'TikTok Look 4' }
+          ]
+        }
+      }
+    ];
+
+    for (const setting of defaultSettings) {
+      await query(
+        'INSERT INTO site_content (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING',
+        [setting.key, JSON.stringify(setting.value)]
+      );
+    }
 
     // 8. Seed Admin Account
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@onlyonehairboss.com';

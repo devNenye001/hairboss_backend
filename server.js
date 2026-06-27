@@ -244,6 +244,38 @@ app.post('/api/auth/reset-password', authenticateToken, requireAuth, async (req,
   }
 });
 
+// POST /api/auth/change-password (Authenticated users)
+app.post('/api/auth/change-password', authenticateToken, requireAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Current and new passwords are required.' });
+  }
+
+  try {
+    const userRes = await query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    const currentHash = userRes.rows[0].password_hash;
+    if (currentHash) {
+      const match = await bcrypt.compare(currentPassword, currentHash);
+      if (!match) {
+        return res.status(400).json({ error: 'Incorrect current password.' });
+      }
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const newHash = await bcrypt.hash(newPassword, salt);
+    await query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, req.user.id]);
+
+    res.json({ success: true, message: 'Password updated successfully!' });
+  } catch (error) {
+    console.error('Password change error:', error);
+    res.status(500).json({ error: 'Failed to update password.' });
+  }
+});
+
 // Google OAuth Redirection
 app.get('/api/auth/google', (req, res) => {
   const redirectTo = req.query.redirectTo || 'http://localhost:5173';
@@ -673,6 +705,110 @@ app.get('/api/db/billing_info', authenticateToken, requireAuth, async (req, res)
   }
 });
 
+// GET site_content
+app.get('/api/db/site_content', async (req, res) => {
+  const { eq_field, eq_value, single } = req.query;
+  try {
+    let sql = 'SELECT * FROM site_content';
+    const params = [];
+    if (eq_field && eq_value) {
+      sql += ` WHERE ${eq_field} = $1`;
+      params.push(eq_value);
+    }
+    const result = await query(sql, params);
+    
+    // Parse value fields
+    const data = result.rows.map(row => ({
+      key: row.key,
+      value: typeof row.value === 'string' ? JSON.parse(row.value) : row.value
+    }));
+
+    if (single === 'true' || req.query.maybe_single === 'true') {
+      res.json({ data: data[0] || null });
+    } else {
+      res.json({ data });
+    }
+  } catch (error) {
+    console.error('DB query error (site_content):', error);
+    res.status(500).json({ error: 'Failed to retrieve site content.' });
+  }
+});
+
+// POST site_content (Admin only)
+app.post('/api/db/site_content', authenticateToken, requireAdmin, async (req, res) => {
+  const { payload } = req.body;
+  if (!payload || !payload.key || payload.value === undefined) {
+    return res.status(400).json({ error: 'Key and value payload details are required.' });
+  }
+  try {
+    const sql = `
+      INSERT INTO site_content (key, value)
+      VALUES ($1, $2)
+      ON CONFLICT (key) DO UPDATE
+      SET value = EXCLUDED.value
+      RETURNING *
+    `;
+    const result = await query(sql, [payload.key, JSON.stringify(payload.value)]);
+    res.status(201).json({ data: result.rows[0] });
+  } catch (error) {
+    console.error('DB insert error (site_content):', error);
+    res.status(500).json({ error: 'Failed to save site content.' });
+  }
+});
+
+// GET stats (Admin only)
+app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    // Metrics 1: Revenue & Orders count
+    const ordersRes = await query('SELECT SUM(total) as revenue, COUNT(*) as count FROM orders WHERE status != $1', ['cancelled']);
+    const revenue = parseFloat(ordersRes.rows[0]?.revenue || 0);
+    const totalOrders = parseInt(ordersRes.rows[0]?.count || 0);
+
+    // Metrics 2: Total products
+    const productsRes = await query('SELECT COUNT(*) as count FROM products');
+    const totalProducts = parseInt(productsRes.rows[0]?.count || 0);
+
+    // Average Order Value
+    const averageOrderValue = totalOrders > 0 ? (revenue / totalOrders) : 0;
+
+    // Sales by category
+    const categorySalesRes = await query(`
+      SELECT p.category, SUM(oi.price * oi.quantity) as sales
+      FROM order_items oi
+      JOIN products p ON p.id = oi.product_id
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.status != 'cancelled'
+      GROUP BY p.category
+      ORDER BY sales DESC
+    `);
+
+    // Recent orders
+    const recentOrdersRes = await query('SELECT id, full_name, email, total, status, created_at FROM orders ORDER BY created_at DESC LIMIT 5');
+
+    // Monthly sales simulation (for graphs)
+    const monthlySalesRes = await query(`
+      SELECT TO_CHAR(created_at, 'Mon') as month, SUM(total) as sales
+      FROM orders
+      WHERE status != 'cancelled'
+      GROUP BY TO_CHAR(created_at, 'Mon'), DATE_TRUNC('month', created_at)
+      ORDER BY DATE_TRUNC('month', created_at) LIMIT 6
+    `);
+
+    res.json({
+      revenue,
+      totalOrders,
+      totalProducts,
+      averageOrderValue,
+      categorySales: categorySalesRes.rows,
+      recentOrders: recentOrdersRes.rows,
+      monthlySales: monthlySalesRes.rows
+    });
+  } catch (error) {
+    console.error('Stats query error:', error);
+    res.status(500).json({ error: 'Failed to retrieve admin stats.' });
+  }
+});
+
 // ── Edge Functions Mock ──────────────────────────────────────────────────────
 
 // Save Billing Function
@@ -754,6 +890,8 @@ app.post('/api/functions/send-email', async (req, res) => {
       await sendWelcomeEmail(data.email, data.name || data.email);
     } else if (type === 'order_confirmation') {
       await sendOrderConfirmationEmail(data.email, data);
+    } else if (type === 'forgot_password') {
+      await sendForgotPasswordEmail(data.email, data.resetUrl || 'http://localhost:5173/reset-password');
     } else {
       console.warn(`Mailer: Unknown custom email function trigger: ${type}`);
     }
@@ -778,19 +916,20 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  const filetypes = /jpeg|jpg|png|webp|gif/;
-  const mimetype = filetypes.test(file.mimetype);
+  // Allow images and video files
+  const filetypes = /jpeg|jpg|png|webp|gif|mp4|webm|ogg|quicktime|mov/;
+  const mimetype = filetypes.test(file.mimetype) || file.mimetype.startsWith('video/');
   const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
 
-  if (mimetype && extname) {
+  if (mimetype || extname) {
     return cb(null, true);
   }
-  cb(new Error('Images only (jpeg, jpg, png, webp, gif) are allowed!'));
+  cb(new Error('Images and video loops (jpeg, jpg, png, webp, gif, mp4, webm, ogg, mov) only!'));
 };
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit for video support
   fileFilter,
 });
 

@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import { query } from './db.js';
 
 dotenv.config();
 
@@ -31,12 +32,36 @@ if (hasSmtpConfig) {
 }
 
 const sendMail = async ({ to, subject, html }) => {
-  const from = EMAIL_FROM || '"OnlyOne Hairboss" <noreply@onlyonehairboss.com>';
-  
-  if (transporter) {
+  let activeTransporter = transporter;
+  let activeFrom = EMAIL_FROM || '"OnlyOne Hairboss" <noreply@onlyonehairboss.com>';
+
+  try {
+    const smtpRes = await query("SELECT value FROM site_content WHERE key = $1 LIMIT 1", ['smtp_settings']);
+    if (smtpRes && smtpRes.rows.length > 0) {
+      const config = smtpRes.rows[0].value;
+      if (config && config.host && config.user && config.pass) {
+        activeTransporter = nodemailer.createTransport({
+          host: config.host,
+          port: parseInt(config.port || '587', 10),
+          secure: parseInt(config.port || '587', 10) === 465,
+          auth: {
+            user: config.user,
+            pass: config.pass,
+          },
+        });
+        if (config.fromEmail) {
+          activeFrom = config.fromEmail;
+        }
+      }
+    }
+  } catch (dbErr) {
+    // Graceful fallback if database is not fully initialized yet
+  }
+
+  if (activeTransporter) {
     try {
-      const info = await transporter.sendMail({
-        from,
+      const info = await activeTransporter.sendMail({
+        from: activeFrom,
         to,
         subject,
         html,
@@ -50,7 +75,7 @@ const sendMail = async ({ to, subject, html }) => {
   } else {
     console.log('\n============================================================');
     console.log(`[EMAIL LOG] TO: ${to}`);
-    console.log(`[EMAIL LOG] FROM: ${from}`);
+    console.log(`[EMAIL LOG] FROM: ${activeFrom}`);
     console.log(`[EMAIL LOG] SUBJECT: ${subject}`);
     console.log('------------------------------------------------------------');
     console.log(html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) + '...');
