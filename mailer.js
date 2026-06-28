@@ -4,13 +4,11 @@ import { query } from './db.js';
 
 dotenv.config();
 
-const {
-  SMTP_HOST,
-  SMTP_PORT,
-  SMTP_USER,
-  SMTP_PASS,
-  EMAIL_FROM,
-} = process.env;
+const SMTP_HOST = process.env.SMTP_HOST || process.env.EMAIL_HOST;
+const SMTP_PORT = process.env.SMTP_PORT || process.env.EMAIL_PORT;
+const SMTP_USER = process.env.SMTP_USER || process.env.EMAIL_USER || process.env.EMAIL_USER_NAME;
+const SMTP_PASS = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.EMAIL_PASSWORD;
+const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_FROM || SMTP_USER;
 
 const hasSmtpConfig = SMTP_HOST && SMTP_USER && SMTP_PASS;
 
