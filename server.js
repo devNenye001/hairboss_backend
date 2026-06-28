@@ -8,6 +8,8 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 
 import { initDb, query } from './db.js';
 import {
@@ -18,6 +20,18 @@ import {
 } from './mailer.js';
 
 dotenv.config();
+
+const ALLOWED_COLUMNS = {
+  orders: ['id', 'user_id', 'full_name', 'email', 'phone', 'address', 'city', 'state', 'notes', 'total', 'status', 'payment_method', 'payment_proof', 'created_at'],
+  products: ['id', 'name', 'price', 'description', 'images', 'category', 'is_featured', 'in_stock', 'stock_count', 'created_at'],
+  site_content: ['key', 'value'],
+  profiles: ['id', 'email', 'full_name', 'role', 'created_at'],
+  order_items: ['id', 'order_id', 'product_id', 'product_name', 'product_image', 'quantity', 'price']
+};
+
+const isValidColumn = (table, column) => {
+  return ALLOWED_COLUMNS[table]?.includes(column);
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,13 +47,44 @@ if (!fs.existsSync(uploadsDir)) {
   console.log('Created uploads directory:', uploadsDir);
 }
 
+// Security Configuration
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+const allowedOrigins = [
+  'https://onlyonehairboss.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000'
+];
+
 app.use(cors({
-  origin: '*', // Allow all origins for API, adjust as needed
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'apikey'],
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      return callback(new Error('The CORS policy for this site does not allow access from the specified Origin.'), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true
 }));
 
 app.use(express.json());
+
+// Auth rate limiter to protect logins
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: 'Too many authentication attempts. Please try again after 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/signup', authLimiter);
+app.use('/api/auth/change-password', authLimiter);
+app.use('/api/auth/forgot-password', authLimiter);
+
 app.use(express.urlencoded({ extended: true }));
 
 // ── Auth Middleware ──────────────────────────────────────────────────────────
@@ -373,6 +418,13 @@ app.get('/api/db/products', async (req, res) => {
     const params = [];
     let paramIndex = 1;
 
+    if (eq_field && !isValidColumn('products', eq_field)) {
+      return res.status(400).json({ error: 'Invalid query field.' });
+    }
+    if (order_field && !isValidColumn('products', order_field)) {
+      return res.status(400).json({ error: 'Invalid order field.' });
+    }
+
     if (eq_field && eq_value) {
       sql += ` WHERE ${eq_field} = $${paramIndex}`;
       params.push(eq_value);
@@ -496,6 +548,13 @@ app.delete('/api/db/products/delete', authenticateToken, requireAdmin, async (re
 // GET orders
 app.get('/api/db/orders', authenticateToken, requireAuth, async (req, res) => {
   const { eq_field, eq_value, order_field, order_ascending, limit } = req.query;
+
+  if (eq_field && !isValidColumn('orders', eq_field)) {
+    return res.status(400).json({ error: 'Invalid query field.' });
+  }
+  if (order_field && !isValidColumn('orders', order_field)) {
+    return res.status(400).json({ error: 'Invalid order field.' });
+  }
 
   try {
     let sql = 'SELECT * FROM orders';
@@ -671,6 +730,10 @@ app.post('/api/db/order_items', authenticateToken, async (req, res) => {
 app.get('/api/db/profiles', authenticateToken, requireAuth, async (req, res) => {
   const { eq_field, eq_value, single } = req.query;
 
+  if (eq_field && !isValidColumn('profiles', eq_field)) {
+    return res.status(400).json({ error: 'Invalid query field.' });
+  }
+
   try {
     // If specific ID is requested, user must be that profile or admin
     if (eq_field === 'id') {
@@ -709,6 +772,11 @@ app.get('/api/db/billing_info', authenticateToken, requireAuth, async (req, res)
 // GET site_content
 app.get('/api/db/site_content', async (req, res) => {
   const { eq_field, eq_value, single } = req.query;
+
+  if (eq_field && !isValidColumn('site_content', eq_field)) {
+    return res.status(400).json({ error: 'Invalid query field.' });
+  }
+
   try {
     let sql = 'SELECT * FROM site_content';
     const params = [];
