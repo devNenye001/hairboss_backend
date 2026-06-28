@@ -18,6 +18,7 @@ import {
   sendForgotPasswordEmail,
   sendAdminOrderNotificationEmail,
   sendOrderStatusUpdateEmail,
+  getEmailHealth,
 } from './mailer.js';
 
 dotenv.config();
@@ -97,6 +98,13 @@ app.use((req, res, next) => {
     console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
   });
   next();
+});
+
+app.get('/api/health/email', (req, res) => {
+  res.json({
+    ok: true,
+    email: getEmailHealth(),
+  });
 });
 
 // Auth rate limiter to protect logins
@@ -289,8 +297,10 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       ? `${redirectTo}?token=${resetToken}`
       : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
 
-    // Send Forgot Password Email
-    await sendForgotPasswordEmail(email, frontendResetUrl);
+    // Queue Forgot Password Email. Delivery failures are logged by the mailer
+    // and must not block password reset requests.
+    sendForgotPasswordEmail(email, frontendResetUrl)
+      .catch(err => console.error('Failed to queue forgot password email:', err));
 
     res.json({ message: 'Reset link sent! Check your email inbox.' });
   } catch (error) {
@@ -795,9 +805,8 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
 
     await query('COMMIT');
 
-    // 5. Send order confirmation email and admin alert email in background
-    try {
-      await sendOrderConfirmationEmail(payload.email, {
+    // 5. Queue order confirmation and admin alert emails in background.
+    sendOrderConfirmationEmail(payload.email, {
         name: payload.full_name,
         orderId: order.id,
         total,
@@ -805,8 +814,10 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
         address: payload.address,
         city: payload.city,
         state: payload.state
-      });
-      await sendAdminOrderNotificationEmail({
+      })
+      .catch(err => console.error('Failed to queue order confirmation email:', err));
+
+    sendAdminOrderNotificationEmail({
         name: payload.full_name,
         orderId: order.id,
         total,
@@ -814,11 +825,8 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
         address: payload.address,
         city: payload.city,
         state: payload.state
-      }).catch(err => console.error('Failed to send admin order email:', err));
-      console.log(`Mailer: Order confirmation email dispatched for order #${order.id}`);
-    } catch (mailErr) {
-      console.error('Mailer: Error dispatching checkout emails:', mailErr);
-    }
+      })
+      .catch(err => console.error('Failed to queue admin order email:', err));
 
     res.status(201).json({ data: order });
   } catch (error) {
@@ -1154,8 +1162,8 @@ app.post('/api/functions/handle-signup-metadata', authenticateToken, requireAuth
   }
 });
 
-// Send Email Function (from frontend trigger)
-app.post('/api/functions/send-email', async (req, res) => {
+// Admin-only manual email queue endpoint. Storefront email events are backend-owned.
+app.post('/api/functions/send-email', authenticateToken, requireAdmin, async (req, res) => {
   const { type, data } = req.body;
 
   if (!type || !data || !data.email) {
@@ -1167,13 +1175,13 @@ app.post('/api/functions/send-email', async (req, res) => {
       await sendWelcomeEmail(data.email, data.name || data.email);
     } else if (type === 'order_confirmation') {
       await sendOrderConfirmationEmail(data.email, data);
-      await sendAdminOrderNotificationEmail(data).catch(err => console.error('Failed to send admin order email:', err));
+      await sendAdminOrderNotificationEmail(data).catch(err => console.error('Failed to queue admin order email:', err));
     } else if (type === 'forgot_password') {
       await sendForgotPasswordEmail(data.email, data.resetUrl || 'http://localhost:5173/reset-password');
     } else {
       console.warn(`Mailer: Unknown custom email function trigger: ${type}`);
     }
-    res.json({ success: true });
+    res.status(202).json({ success: true, queued: true });
   } catch (error) {
     console.error('Send email function error:', error);
     res.status(500).json({ error: 'Failed to dispatch email alert.' });
