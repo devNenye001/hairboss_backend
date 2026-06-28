@@ -91,6 +91,10 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 app.use(express.json());
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
 app.use((req, res, next) => {
   const startedAt = Date.now();
   res.on('finish', () => {
@@ -459,7 +463,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
 
 // GET products
 app.get('/api/db/products', async (req, res) => {
-  const { eq_field, eq_value, order_field, order_ascending, limit } = req.query;
+  const { eq_field, eq_value, ilike_field, ilike_value, order_field, order_ascending, limit, single, maybe_single } = req.query;
 
   try {
     let sql = 'SELECT * FROM products';
@@ -469,14 +473,29 @@ app.get('/api/db/products', async (req, res) => {
     if (eq_field && !isValidColumn('products', eq_field)) {
       return res.status(400).json({ error: 'Invalid query field.' });
     }
+    if (ilike_field && !isValidColumn('products', ilike_field)) {
+      return res.status(400).json({ error: 'Invalid search field.' });
+    }
     if (order_field && !isValidColumn('products', order_field)) {
       return res.status(400).json({ error: 'Invalid order field.' });
     }
 
+    const conditions = [];
+
     if (eq_field && eq_value) {
-      sql += ` WHERE ${eq_field} = $${paramIndex}`;
+      conditions.push(`${eq_field} = $${paramIndex}`);
       params.push(eq_value);
       paramIndex++;
+    }
+
+    if (ilike_field && ilike_value) {
+      conditions.push(`${ilike_field} ILIKE $${paramIndex}`);
+      params.push(ilike_value);
+      paramIndex++;
+    }
+
+    if (conditions.length > 0) {
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     if (order_field) {
@@ -493,7 +512,10 @@ app.get('/api/db/products', async (req, res) => {
     }
 
     const result = await query(sql, params);
-    res.json({ data: result.rows });
+    const data = single === 'true' || maybe_single === 'true'
+      ? result.rows[0] || null
+      : result.rows;
+    res.json({ data });
   } catch (error) {
     console.error('DB query error (products):', error);
     res.status(500).json({ error: 'Failed to retrieve products.' });
