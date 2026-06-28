@@ -1011,6 +1011,57 @@ app.post('/api/storage/upload', authenticateToken, requireAdmin, upload.single('
   res.json({ path: req.file.filename });
 });
 
+// Chunked resumable upload endpoint (Admin only)
+app.post('/api/storage/upload/chunk', authenticateToken, requireAdmin, multer().single('chunk'), async (req, res) => {
+  const { chunkIndex, totalChunks, fileName } = req.body;
+  if (!req.file) {
+    return res.status(400).json({ error: 'No chunk file uploaded.' });
+  }
+
+  const tempDir = path.join(__dirname, 'uploads', 'temp');
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  const tempFilePath = path.join(tempDir, fileName);
+
+  try {
+    // Append chunk buffer to temp file
+    fs.appendFileSync(tempFilePath, req.file.buffer);
+
+    const parsedIndex = parseInt(chunkIndex, 10);
+    const parsedTotal = parseInt(totalChunks, 10);
+
+    if (parsedIndex + 1 === parsedTotal) {
+      const finalPath = path.join(uploadsDir, fileName);
+      
+      // Remove file if it already exists in final folder to avoid locks
+      if (fs.existsSync(finalPath)) {
+        fs.unlinkSync(finalPath);
+      }
+      
+      fs.renameSync(tempFilePath, finalPath);
+
+      // Verify file size is <= 20MB
+      const stats = fs.statSync(finalPath);
+      if (stats.size > 20 * 1024 * 1024) {
+        fs.unlinkSync(finalPath);
+        return res.status(400).json({ error: 'File size exceeds maximum limit of 20MB.' });
+      }
+
+      return res.json({ path: fileName, completed: true });
+    }
+
+    res.json({ completed: false, nextIndex: parsedIndex + 1 });
+  } catch (err) {
+    console.error('Chunk upload error:', err);
+    if (fs.existsSync(tempFilePath)) {
+      try { fs.unlinkSync(tempFilePath); } catch (e) {}
+    }
+    res.status(500).json({ error: 'Failed to process upload chunk.' });
+  }
+});
+
 // Serve images statically
 app.use('/api/storage/files', express.static(uploadsDir));
 
