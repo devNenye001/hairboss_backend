@@ -145,6 +145,7 @@ const authenticateToken = async (req, res, next) => {
       id: decoded.id,
       email: decoded.email,
       role: role,
+      isReset: Boolean(decoded.isReset),
     };
     next();
   } catch (err) {
@@ -165,6 +166,16 @@ const requireAdmin = (req, res, next) => {
   }
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
+  }
+  next();
+};
+
+const requireResetToken = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Reset link is missing or expired. Please request a new one.' });
+  }
+  if (!req.user.isReset) {
+    return res.status(403).json({ error: 'Invalid reset link. Please request a new one.' });
   }
   next();
 };
@@ -293,9 +304,8 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     const user = userRes.rows[0];
     const resetToken = jwt.sign({ id: user.id, email: user.email, isReset: true }, JWT_SECRET, { expiresIn: '1h' });
 
-    const frontendResetUrl = redirectTo
-      ? `${redirectTo}?token=${resetToken}`
-      : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`;
+    const resetBaseUrl = redirectTo || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password`;
+    const frontendResetUrl = `${resetBaseUrl}${resetBaseUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(resetToken)}`;
 
     // Queue Forgot Password Email. Delivery failures are logged by the mailer
     // and must not block password reset requests.
@@ -310,7 +320,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 });
 
 // Reset Password Execution
-app.post('/api/auth/reset-password', authenticateToken, requireAuth, async (req, res) => {
+app.post('/api/auth/reset-password', authenticateToken, requireResetToken, async (req, res) => {
   const { password } = req.body;
   if (!password || password.length < 6) {
     return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
