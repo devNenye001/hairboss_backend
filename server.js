@@ -83,7 +83,7 @@ const corsOptions = {
   },
   credentials: corsCredentials,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'apikey', 'x-client-info'],
   optionsSuccessStatus: 204,
 };
 
