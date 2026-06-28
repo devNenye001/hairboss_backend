@@ -297,3 +297,55 @@ export const sendForgotPasswordEmail = async (email, resetUrl) => {
     html,
   });
 };
+
+export const sendAdminOrderNotificationEmail = async ({ name, orderId, total, items, address, city, state }) => {
+  let itemsHtml = '';
+  if (items && Array.isArray(items)) {
+    itemsHtml = items.map(item => `
+      <tr>
+        <td>${item.name} <span style="color:#777; font-size:12px;">x${item.quantity}</span></td>
+        <td style="text-align: right;" class="price-text">₦${(item.price * item.quantity).toLocaleString()}</td>
+      </tr>
+    `).join('');
+  }
+
+  const html = BASE_TEMPLATE(`
+    <h2 style="margin-top:0; color:#995544;">New Order Received!</h2>
+    <p>A new order <strong>#${orderId}</strong> has been successfully placed on the store by <strong>${name}</strong>.</p>
+    
+    <h3 style="border-bottom:1px solid #eee; padding-bottom:8px; margin-top:20px; color:#111;">Shipping Details</h3>
+    <p style="margin-bottom:0; font-size:14px; color:#555;">
+      <strong>Name:</strong> ${name}<br>
+      <strong>Address:</strong> ${address}, ${city}, ${state}<br>
+    </p>
+
+    <h3 style="border-bottom:1px solid #eee; padding-bottom:8px; margin-top:30px; color:#111;">Order Summary</h3>
+    <table class="details-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th style="text-align: right;">Price</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemsHtml}
+        <tr class="total-row">
+          <td style="padding-top:15px;">Total Value</td>
+          <td style="text-align: right; padding-top:15px;" class="price-text">₦${total.toLocaleString()}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="text-align: center; margin-top:25px;">
+      <a href="https://onlyonehairboss.vercel.app/admin/orders" class="button">View Order in Dashboard</a>
+    </div>
+  `);
+
+  const adminEmail = 'onlyonehairboss@gmail.com';
+
+  return sendMail({
+    to: adminEmail,
+    subject: `[New Order] #${orderId} placed by ${name}`,
+    html,
+  });
+};

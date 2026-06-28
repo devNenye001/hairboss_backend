@@ -14,6 +14,7 @@ import {
   sendWelcomeEmail,
   sendOrderConfirmationEmail,
   sendForgotPasswordEmail,
+  sendAdminOrderNotificationEmail,
 } from './mailer.js';
 
 dotenv.config();
@@ -890,6 +891,7 @@ app.post('/api/functions/send-email', async (req, res) => {
       await sendWelcomeEmail(data.email, data.name || data.email);
     } else if (type === 'order_confirmation') {
       await sendOrderConfirmationEmail(data.email, data);
+      await sendAdminOrderNotificationEmail(data).catch(err => console.error('Failed to send admin order email:', err));
     } else if (type === 'forgot_password') {
       await sendForgotPasswordEmail(data.email, data.resetUrl || 'http://localhost:5173/reset-password');
     } else {
