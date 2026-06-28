@@ -329,7 +329,7 @@ app.get('/api/auth/google', (req, res) => {
     return res.status(400).json({ error: 'Google Client ID is not configured on the server.' });
   }
 
-  const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}&response_type=code&scope=email%20profile&state=${encodeURIComponent(redirectTo)}`;
+  const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}&response_type=code&scope=email%20profile&state=${encodeURIComponent(redirectTo)}&prompt=select_account`;
   res.redirect(oauthUrl);
 });
 
