@@ -17,6 +17,7 @@ import {
   sendOrderConfirmationEmail,
   sendForgotPasswordEmail,
   sendAdminOrderNotificationEmail,
+  sendOrderStatusUpdateEmail,
 } from './mailer.js';
 
 dotenv.config();
@@ -41,6 +42,15 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'hairboss-super-secret-key-1234';
 
+const requiredEnv = ['DATABASE_URL', 'JWT_SECRET'];
+const missingEnv = requiredEnv.filter((key) => !process.env[key]);
+if (missingEnv.length > 0) {
+  console.warn(`Production hardening: missing env vars: ${missingEnv.join(', ')}`);
+}
+if (!process.env.FLUTTERWAVE_SECRET_KEY) {
+  console.warn('Production hardening: FLUTTERWAVE_SECRET_KEY is missing. Payment verification will only be bypassed outside production.');
+}
+
 // Ensure uploads folder exists
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -56,21 +66,38 @@ app.use(helmet({
 const allowedOrigins = [
   'https://onlyonehairboss.vercel.app',
   'http://localhost:5173',
-  'http://localhost:3000'
+  'http://localhost:3000',
+  ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean) : []),
 ];
 
-app.use(cors({
+const corsCredentials = process.env.CORS_CREDENTIALS === 'true';
+
+const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      return callback(new Error('The CORS policy for this site does not allow access from the specified Origin.'), false);
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked origin: ${origin}`));
     }
-    return callback(null, true);
   },
-  credentials: true
-}));
+  credentials: corsCredentials,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(express.json());
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - startedAt;
+    console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+  });
+  next();
+});
 
 // Auth rate limiter to protect logins
 const authLimiter = rateLimit({
@@ -548,7 +575,7 @@ app.delete('/api/db/products/delete', authenticateToken, requireAdmin, async (re
 
 // GET orders
 app.get('/api/db/orders', authenticateToken, requireAuth, async (req, res) => {
-  const { eq_field, eq_value, order_field, order_ascending, limit } = req.query;
+  const { eq_field, eq_value, order_field, order_ascending, limit, single, maybe_single } = req.query;
 
   if (eq_field && !isValidColumn('orders', eq_field)) {
     return res.status(400).json({ error: 'Invalid query field.' });
@@ -591,6 +618,9 @@ app.get('/api/db/orders', authenticateToken, requireAuth, async (req, res) => {
     }
 
     const result = await query(sql, params);
+    if (single === 'true' || maybe_single === 'true') {
+      return res.json({ data: result.rows[0] || null });
+    }
     res.json({ data: result.rows });
   } catch (error) {
     console.error('DB query error (orders):', error);
@@ -638,22 +668,199 @@ app.post('/api/db/orders', authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/checkout/verify-payment
+app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => {
+  const { transaction_id, payload } = req.body;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const total = Number(payload?.total);
+
+  if (!transaction_id || !payload || !payload.full_name || !payload.email || !Number.isFinite(total) || total <= 0 || items.length === 0) {
+    return res.status(400).json({ error: 'Invalid checkout request parameters.' });
+  }
+
+  try {
+    // 1. Prevent duplicate orders
+    const transactionId = transaction_id.toString();
+    const duplicateCheck = await query('SELECT * FROM orders WHERE payment_proof = $1', [transactionId]);
+    if (duplicateCheck.rows.length > 0) {
+      return res.status(200).json({ data: duplicateCheck.rows[0], message: 'Order already processed.' });
+    }
+
+    // 2. Verify payment server-side
+    const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
+    let verifiedPayment = {
+      status: 'successful',
+      amount: total,
+      currency: 'NGN',
+      tx_ref: payload.tx_ref || '',
+      raw: {},
+    };
+
+    if (FLUTTERWAVE_SECRET_KEY) {
+      const flwResponse = await fetch(`https://api.flutterwave.com/v3/transactions/${transaction_id}/verify`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const flwData = await flwResponse.json();
+      const flwAmount = Number(flwData?.data?.amount);
+      const flwCurrency = flwData?.data?.currency || 'NGN';
+      const flwStatus = flwData?.data?.status;
+      if (!flwResponse.ok || flwData.status !== 'success' || flwStatus !== 'successful' || flwAmount < total || flwCurrency !== 'NGN') {
+        return res.status(400).json({ error: 'Flutterwave payment verification failed.' });
+      }
+      verifiedPayment = {
+        status: flwStatus,
+        amount: flwAmount,
+        currency: flwCurrency,
+        tx_ref: flwData?.data?.tx_ref || payload.tx_ref || '',
+        raw: flwData,
+      };
+    } else {
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(500).json({ error: 'Payment verification is not configured.' });
+      }
+      console.warn('Flutterwave: Secret key not defined. Bypassing verification for development only.');
+    }
+
+    // 3. Create the order
+    const orderId = crypto.randomUUID();
+    const userId = req.user ? req.user.id : null;
+
+    const orderSql = `
+      INSERT INTO orders (id, user_id, full_name, email, phone, address, city, state, total, status, payment_method, payment_proof, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING *
+    `;
+    const orderParams = [
+      orderId,
+      userId,
+      payload.full_name,
+      payload.email,
+      payload.phone,
+      payload.address,
+      payload.city,
+      payload.state,
+      total,
+      'pending',
+      'flutterwave',
+      transactionId,
+      payload.notes || '',
+    ];
+
+    await query('BEGIN');
+    const orderResult = await query(orderSql, orderParams);
+    const order = orderResult.rows[0];
+
+    // 4. Create order items
+    for (const item of items) {
+      const itemId = crypto.randomUUID();
+      const itemSql = `
+        INSERT INTO order_items (id, order_id, product_id, product_name, product_image, quantity, price)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `;
+      const itemParams = [
+        itemId,
+        orderId,
+        typeof item.id === 'string' && item.id.includes('-') ? item.id : null,
+        item.name || 'OnlyOne Hairboss item',
+        item.image || '',
+        Number(item.quantity) > 0 ? Number(item.quantity) : 1,
+        Number(item.price) || 0
+      ];
+      await query(itemSql, itemParams);
+    }
+
+    await query(
+      `INSERT INTO payment_transactions (id, order_id, provider, transaction_id, tx_ref, amount, currency, status, raw_response)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (transaction_id) DO UPDATE
+       SET order_id = EXCLUDED.order_id,
+           status = EXCLUDED.status,
+           raw_response = EXCLUDED.raw_response`,
+      [
+        crypto.randomUUID(),
+        orderId,
+        'flutterwave',
+        transactionId,
+        verifiedPayment.tx_ref,
+        verifiedPayment.amount,
+        verifiedPayment.currency,
+        verifiedPayment.status,
+        JSON.stringify(verifiedPayment.raw),
+      ]
+    );
+
+    await query('COMMIT');
+
+    // 5. Send order confirmation email and admin alert email in background
+    try {
+      await sendOrderConfirmationEmail(payload.email, {
+        name: payload.full_name,
+        orderId: order.id,
+        total,
+        items,
+        address: payload.address,
+        city: payload.city,
+        state: payload.state
+      });
+      await sendAdminOrderNotificationEmail({
+        name: payload.full_name,
+        orderId: order.id,
+        total,
+        items,
+        address: payload.address,
+        city: payload.city,
+        state: payload.state
+      }).catch(err => console.error('Failed to send admin order email:', err));
+      console.log(`Mailer: Order confirmation email dispatched for order #${order.id}`);
+    } catch (mailErr) {
+      console.error('Mailer: Error dispatching checkout emails:', mailErr);
+    }
+
+    res.status(201).json({ data: order });
+  } catch (error) {
+    await query('ROLLBACK').catch(() => {});
+    console.error('Checkout verification error:', error);
+    res.status(500).json({ error: 'Failed to process and save checkout order details.' });
+  }
+});
+
 // PUT orders status update (Admin only)
 app.put('/api/db/orders/update', authenticateToken, requireAdmin, async (req, res) => {
   const { payload, field, value } = req.body;
   if (field !== 'id') {
     return res.status(400).json({ error: 'Can only update orders by id.' });
   }
+  const allowedStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+  if (!allowedStatuses.includes(payload?.status)) {
+    return res.status(400).json({ error: 'Invalid order status.' });
+  }
 
   try {
+    const existing = await query('SELECT * FROM orders WHERE id = $1', [value]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
     const result = await query(
       'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
       [payload.status, value]
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found.' });
+    const updatedOrder = result.rows[0];
+
+    if (existing.rows[0].status !== updatedOrder.status) {
+      sendOrderStatusUpdateEmail(updatedOrder.email, {
+        name: updatedOrder.full_name,
+        orderId: updatedOrder.id,
+        oldStatus: existing.rows[0].status,
+        newStatus: updatedOrder.status,
+      }).catch(err => console.error('Failed to send order status email:', err));
     }
-    res.json({ data: result.rows[0] });
+
+    res.json({ data: updatedOrder });
   } catch (error) {
     console.error('DB update error (orders):', error);
     res.status(500).json({ error: 'Failed to update order.' });
@@ -981,7 +1188,7 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}${ext}`;
+    const uniqueName = `${Date.now()}-${crypto.randomBytes(5).toString('hex')}${ext}`;
     cb(null, uniqueName);
   },
 });
@@ -1019,12 +1226,17 @@ app.post('/api/storage/upload/chunk', authenticateToken, requireAdmin, multer().
     return res.status(400).json({ error: 'No chunk file uploaded.' });
   }
 
+  const safeFileName = path.basename(fileName || '');
+  if (!safeFileName || safeFileName !== fileName) {
+    return res.status(400).json({ error: 'Invalid upload file name.' });
+  }
+
   const tempDir = path.join(__dirname, 'uploads', 'temp');
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
   }
 
-  const tempFilePath = path.join(tempDir, fileName);
+  const tempFilePath = path.join(tempDir, safeFileName);
 
   try {
     // Append chunk buffer to temp file
@@ -1034,7 +1246,7 @@ app.post('/api/storage/upload/chunk', authenticateToken, requireAdmin, multer().
     const parsedTotal = parseInt(totalChunks, 10);
 
     if (parsedIndex + 1 === parsedTotal) {
-      const finalPath = path.join(uploadsDir, fileName);
+      const finalPath = path.join(uploadsDir, safeFileName);
       
       // Remove file if it already exists in final folder to avoid locks
       if (fs.existsSync(finalPath)) {
@@ -1050,7 +1262,7 @@ app.post('/api/storage/upload/chunk', authenticateToken, requireAdmin, multer().
         return res.status(400).json({ error: 'File size exceeds maximum limit of 20MB.' });
       }
 
-      return res.json({ path: fileName, completed: true });
+      return res.json({ path: safeFileName, completed: true });
     }
 
     res.json({ completed: false, nextIndex: parsedIndex + 1 });
@@ -1064,7 +1276,10 @@ app.post('/api/storage/upload/chunk', authenticateToken, requireAdmin, multer().
 });
 
 // Serve images statically
-app.use('/api/storage/files', express.static(uploadsDir));
+app.use('/api/storage/files', express.static(uploadsDir, {
+  maxAge: '7d',
+  immutable: true,
+}));
 
 // ── Error handling ───────────────────────────────────────────────────────────
 

@@ -226,6 +226,7 @@ export const sendWelcomeEmail = async (email, name) => {
 };
 
 export const sendOrderConfirmationEmail = async (email, { name, orderId, total, items, address, city, state }) => {
+
   let itemsHtml = '';
   if (items && Array.isArray(items)) {
     itemsHtml = items.map(item => `
@@ -292,6 +293,23 @@ export const sendForgotPasswordEmail = async (email, resetUrl) => {
   return sendMail({
     to: email,
     subject: 'Reset Password Request – OnlyOne Hairboss',
+    html,
+  });
+};
+
+export const sendOrderStatusUpdateEmail = async (email, { name, orderId, oldStatus, newStatus }) => {
+  const html = BASE_TEMPLATE(`
+    <h2 style="margin-top:0; color:#111;">Order Status Updated</h2>
+    <p>Hi ${name},</p>
+    <p>Your order <strong>#${orderId}</strong> status has changed from <strong>${oldStatus}</strong> to <strong>${newStatus}</strong>.</p>
+    <p>You can view the latest status in your account.</p>
+    <div style="text-align: center; margin-top:15px;">
+      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/account" class="button">View Order</a>
+    </div>
+  `);
+  return sendMail({
+    to: email,
+    subject: `Order #${orderId} Status Update – OnlyOne Hairboss`,
     html,
   });
 };

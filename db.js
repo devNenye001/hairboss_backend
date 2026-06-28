@@ -94,6 +94,12 @@ export const initDb = async () => {
       );
     `);
 
+    await query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment_proof_unique
+      ON orders (payment_proof)
+      WHERE payment_proof IS NOT NULL AND payment_proof <> '';
+    `);
+
     // 6. Create order_items table
     await query(`
       CREATE TABLE IF NOT EXISTS order_items (
@@ -104,6 +110,21 @@ export const initDb = async () => {
         product_image VARCHAR(255) DEFAULT '',
         quantity INT NOT NULL DEFAULT 1,
         price NUMERIC NOT NULL
+      );
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS payment_transactions (
+        id UUID PRIMARY KEY,
+        order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+        provider VARCHAR(100) NOT NULL DEFAULT 'flutterwave',
+        transaction_id VARCHAR(255) UNIQUE NOT NULL,
+        tx_ref VARCHAR(255) DEFAULT '',
+        amount NUMERIC NOT NULL,
+        currency VARCHAR(10) DEFAULT 'NGN',
+        status VARCHAR(50) NOT NULL,
+        raw_response JSONB DEFAULT '{}'::JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
 
