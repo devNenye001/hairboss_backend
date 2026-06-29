@@ -208,18 +208,17 @@ export const initDb = async () => {
     }
 
     // 8. Seed Admin Account
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@onlyonehairboss.com';
+    const adminEmail = process.env.ADMIN_EMAIL || 'onlyonehairboss@gmail.com';
     const adminPassword = process.env.ADMIN_PASSWORD || 'AdminPass123!';
     const adminFullName = process.env.ADMIN_NAME || 'Admin Hairboss';
 
     const adminCheck = await query('SELECT * FROM profiles WHERE role = $1 LIMIT 1', ['admin']);
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(adminPassword, salt);
+
     if (adminCheck.rows.length === 0) {
       console.log(`No admin account found. Creating default admin account: ${adminEmail}`);
       const userId = crypto.randomUUID();
-      const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash(adminPassword, salt);
-
-      // Begin transaction
       await query('BEGIN');
       await query(
         'INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)',
@@ -232,7 +231,19 @@ export const initDb = async () => {
       await query('COMMIT');
       console.log('Default admin seeded successfully.');
     } else {
-      console.log(`Admin account exists: ${adminCheck.rows[0].email}`);
+      const adminId = adminCheck.rows[0].id;
+      console.log(`Admin account exists. Syncing credentials to env definitions for admin ID: ${adminId}`);
+      await query('BEGIN');
+      await query(
+        'UPDATE users SET email = $1, password_hash = $2 WHERE id = $3',
+        [adminEmail, passwordHash, adminId]
+      );
+      await query(
+        'UPDATE profiles SET email = $1, full_name = $2 WHERE id = $3',
+        [adminEmail, adminFullName, adminId]
+      );
+      await query('COMMIT');
+      console.log('Admin account synced successfully.');
     }
 
   } catch (error) {
