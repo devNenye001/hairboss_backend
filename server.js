@@ -1139,13 +1139,32 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
     // Recent orders
     const recentOrdersRes = await query('SELECT id, full_name, email, total, status, created_at FROM orders ORDER BY created_at DESC LIMIT 5');
 
-    // Monthly sales simulation (for graphs)
+    // Monthly sales (for graphs)
     const monthlySalesRes = await query(`
-      SELECT TO_CHAR(created_at, 'Mon') as month, SUM(total) as sales
+      SELECT TO_CHAR(created_at, 'Mon YYYY') as month, SUM(total) as sales
       FROM orders
       WHERE status != 'cancelled'
-      GROUP BY TO_CHAR(created_at, 'Mon'), DATE_TRUNC('month', created_at)
-      ORDER BY DATE_TRUNC('month', created_at) LIMIT 6
+      GROUP BY TO_CHAR(created_at, 'Mon YYYY'), DATE_TRUNC('month', created_at)
+      ORDER BY DATE_TRUNC('month', created_at) DESC
+      LIMIT 6
+    `);
+    monthlySalesRes.rows.reverse();
+
+    // Daily revenue for the past 7 days (includes zero-sale days)
+    const dailyRevenueRes = await query(`
+      SELECT
+        d.date::date as date,
+        COALESCE(SUM(o.total), 0) as sales
+      FROM generate_series(
+        CURRENT_DATE - INTERVAL '6 days',
+        CURRENT_DATE,
+        '1 day'::interval
+      ) AS d(date)
+      LEFT JOIN orders o
+        ON DATE(o.created_at) = d.date::date
+        AND o.status != 'cancelled'
+      GROUP BY d.date
+      ORDER BY d.date
     `);
 
     // --- NEW ANALYTICS ---
@@ -1219,6 +1238,7 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
       categorySales: categorySalesRes.rows,
       recentOrders: recentOrdersRes.rows,
       monthlySales: monthlySalesRes.rows,
+      dailyRevenue: dailyRevenueRes.rows,
       weeklyRevenue,
       monthlyRevenue,
       yearlyRevenue,
