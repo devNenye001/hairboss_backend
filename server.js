@@ -1148,6 +1148,69 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
       ORDER BY DATE_TRUNC('month', created_at) LIMIT 6
     `);
 
+    // --- NEW ANALYTICS ---
+    // 1. Weekly, Monthly, and Yearly Revenue
+    const weekRevenueRes = await query("SELECT SUM(total) as revenue FROM orders WHERE status != 'cancelled' AND created_at >= DATE_TRUNC('week', NOW())");
+    const monthRevenueRes = await query("SELECT SUM(total) as revenue FROM orders WHERE status != 'cancelled' AND created_at >= DATE_TRUNC('month', NOW())");
+    const yearRevenueRes = await query("SELECT SUM(total) as revenue FROM orders WHERE status != 'cancelled' AND created_at >= DATE_TRUNC('year', NOW())");
+
+    const weeklyRevenue = parseFloat(weekRevenueRes.rows[0]?.revenue || 0);
+    const monthlyRevenue = parseFloat(monthRevenueRes.rows[0]?.revenue || 0);
+    const yearlyRevenue = parseFloat(yearRevenueRes.rows[0]?.revenue || 0);
+
+    // 2. Best-selling wigs by month and year
+    const bestSellersRes = await query(`
+      SELECT 
+        TO_CHAR(o.created_at, 'Month YYYY') as period,
+        oi.product_name,
+        SUM(oi.quantity) as quantity_sold,
+        SUM(oi.price * oi.quantity) as sales_value
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.status != 'cancelled'
+      GROUP BY TO_CHAR(o.created_at, 'Month YYYY'), oi.product_name, DATE_TRUNC('month', o.created_at)
+      ORDER BY DATE_TRUNC('month', o.created_at) DESC, quantity_sold DESC
+    `);
+
+    // 3. Sales performance insights
+    const insights = [];
+    
+    // Top selling product overall
+    const topOverallRes = await query(`
+      SELECT product_name, SUM(quantity) as quantity_sold 
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.status != 'cancelled'
+      GROUP BY product_name 
+      ORDER BY quantity_sold DESC 
+      LIMIT 1
+    `);
+    if (topOverallRes.rows.length > 0) {
+      insights.push(`👑 '${topOverallRes.rows[0].product_name}' is your #1 best-selling wig overall, with a total of ${topOverallRes.rows[0].quantity_sold} units sold.`);
+    }
+
+    // Top revenue category
+    if (categorySalesRes.rows.length > 0) {
+      insights.push(`🔥 The '${categorySalesRes.rows[0].category || 'General'}' category is your highest-grossing product segment, generating ₦${parseFloat(categorySalesRes.rows[0].sales || 0).toLocaleString('en-US', { minimumFractionDigits: 0 })} in sales.`);
+    }
+
+    // Order health ratio
+    const cancelledOrdersRes = await query("SELECT COUNT(*) as count FROM orders WHERE status = 'cancelled'");
+    const totalOrdersWithCancelledRes = await query("SELECT COUNT(*) as count FROM orders");
+    const cancelledCount = parseInt(cancelledOrdersRes.rows[0]?.count || 0);
+    const totalCountAll = parseInt(totalOrdersWithCancelledRes.rows[0]?.count || 0);
+    if (totalCountAll > 0) {
+      const cancelRate = ((cancelledCount / totalCountAll) * 100).toFixed(1);
+      if (cancelRate > 20) {
+        insights.push(`⚠️ Order cancellation rate is high at ${cancelRate}%. Check customer feedback or payment dropouts.`);
+      } else {
+        insights.push(`⚡ Order fulfillment health is excellent: only ${cancelRate}% of orders are cancelled.`);
+      }
+    }
+
+    // Revenue growth statement
+    insights.push(`📈 Weekly revenue stands at ₦${weeklyRevenue.toLocaleString()} and monthly revenue at ₦${monthlyRevenue.toLocaleString()}. Keep pushing!`);
+
     res.json({
       revenue,
       totalOrders,
@@ -1155,7 +1218,12 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
       averageOrderValue,
       categorySales: categorySalesRes.rows,
       recentOrders: recentOrdersRes.rows,
-      monthlySales: monthlySalesRes.rows
+      monthlySales: monthlySalesRes.rows,
+      weeklyRevenue,
+      monthlyRevenue,
+      yearlyRevenue,
+      bestSellers: bestSellersRes.rows,
+      insights
     });
   } catch (error) {
     console.error('Stats query error:', error);
