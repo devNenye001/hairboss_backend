@@ -124,12 +124,10 @@ const renderShell = ({ preheader, content }) => `<!doctype html>
     <div class="card">
       <div class="hero">
         <img class="logo" src="${LOGO_URL}" alt="${BRAND_NAME}">
-        <img class="profile-pic" src="${FRONTEND_URL}/hero-image.webp" alt="OnlyOne Hairboss Profile" style="width:70px; height:70px; border-radius:50%; object-fit:cover; border:2px solid #fff1ea; margin:12px auto 0; display:block;">
       </div>
       <div class="body">${content}</div>
       <div class="footer">
-        <p>${new Date().getFullYear()} ${BRAND_NAME}. Luxury hair, handled with care.</p>
-        <p class="muted">You received this email because you used ${BRAND_NAME}.</p>
+        <p>&copy; ${new Date().getFullYear()} OnlyOneHairboss</p>
       </div>
     </div>
   </div>
