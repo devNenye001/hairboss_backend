@@ -93,10 +93,8 @@ const renderShell = ({ preheader, content }) => `<!doctype html>
     .preheader { display:none; max-height:0; overflow:hidden; opacity:0; color:transparent; }
     .wrap { width:100%; background:#fff1ea; padding:32px 12px; }
     .card { max-width:640px; margin:0 auto; background:#fffaf7; border:1px solid rgba(153,85,68,0.18); }
-    .hero { padding:34px 28px 28px; text-align:center; background:#1a120e; }
-    .logo { max-width:118px; height:auto; margin:0 auto 14px; display:block; }
-    .brand { margin:0; color:#fff1ea; font-size:25px; line-height:1.2; letter-spacing:0.5px; font-family:Georgia, 'Times New Roman', serif; font-weight:400; }
-    .tag { margin:8px 0 0; color:#d5a08c; font-size:12px; letter-spacing:2px; text-transform:uppercase; }
+    .hero { padding:40px 20px; text-align:center; background-color:#0c0806; background-image:linear-gradient(rgba(12, 8, 6, 0.7), rgba(12, 8, 6, 0.7)), url('${FRONTEND_URL}/banner.svg'); background-size:cover; background-position:center; }
+    .logo { max-width:140px; height:auto; margin:0 auto; display:block; }
     .body { padding:34px 30px; font-size:15px; line-height:1.7; color:#3a2a25; }
     h2 { margin:0 0 14px; color:#1a120e; font-size:28px; line-height:1.18; font-family:Georgia, 'Times New Roman', serif; font-weight:400; }
     h3 { margin:28px 0 10px; color:#1a120e; font-size:16px; text-transform:uppercase; letter-spacing:1px; }
@@ -114,7 +112,7 @@ const renderShell = ({ preheader, content }) => `<!doctype html>
     @media (max-width:520px) {
       .wrap { padding:0; }
       .body { padding:28px 20px; }
-      .hero { padding:28px 20px 24px; }
+      .hero { padding:32px 16px; }
       h2 { font-size:24px; }
       .button { display:block; }
     }
@@ -126,8 +124,6 @@ const renderShell = ({ preheader, content }) => `<!doctype html>
     <div class="card">
       <div class="hero">
         <img class="logo" src="${LOGO_URL}" alt="${BRAND_NAME}">
-        <h1 class="brand">${BRAND_NAME}</h1>
-        <p class="tag">Luxury Hair Studio</p>
       </div>
       <div class="body">${content}</div>
       <div class="footer">
@@ -280,21 +276,21 @@ export const getEmailHealth = () => ({
 export const sendWelcomeEmail = async (email, name) => {
   const firstName = escapeHtml(name || email);
   const { html, text } = buildEmail({
-    title: `Welcome, ${firstName}`,
+    title: 'Welcome, Hairboss Queen ✨',
     preheader: 'Your OnlyOne Hairboss account is ready.',
     intro: `
-      <p>Your account is active, and your luxury hair experience has officially begun.</p>
-      <p>Browse curated wigs, save your details, and track every order from your account dashboard.</p>
+      <p>Hi ${firstName},</p>
+      <p>Welcome to OnlyOne Hairboss.</p>
+      <p>Your account has been created successfully, and you’re now officially part of our Hairboss Queen community. Explore our collections today and find your next favorite look.</p>
     `,
-    ctaLabel: 'Explore The Collection',
+    ctaLabel: 'Shop Now',
     ctaUrl: `${FRONTEND_URL}/shop`,
-    outro: '<p>Thank you for choosing hair that feels personal, polished, and unmistakably yours.</p>',
   });
 
   return enqueueEmail({
     event: 'welcome',
     to: email,
-    subject: `Welcome to ${BRAND_NAME}`,
+    subject: 'Welcome, Hairboss Queen ✨',
     html,
     text,
   });
@@ -302,20 +298,21 @@ export const sendWelcomeEmail = async (email, name) => {
 
 export const sendForgotPasswordEmail = async (email, resetUrl) => {
   const { html, text } = buildEmail({
-    title: 'Reset your password',
-    preheader: 'Use your secure reset link within one hour.',
+    title: 'Reset Your Password',
+    preheader: 'Reset your OnlyOne Hairboss account password.',
     intro: `
-      <p>We received a request to reset your ${BRAND_NAME} password.</p>
-      <p>This secure link expires in one hour. If you did not request it, you can ignore this email.</p>
+      <p>Hi Hairboss Queen,</p>
+      <p>We received a request to reset your password. Click the button below to create a new one:</p>
     `,
     ctaLabel: 'Reset Password',
     ctaUrl: resetUrl,
+    outro: '<p>If you didn’t request this change, you can safely ignore this email and your password will remain the same.</p>',
   });
 
   return enqueueEmail({
     event: 'forgot-password',
     to: email,
-    subject: `${BRAND_NAME} password reset`,
+    subject: 'Reset Your Password',
     html,
     text,
   });
@@ -324,39 +321,69 @@ export const sendForgotPasswordEmail = async (email, resetUrl) => {
 export const sendOrderConfirmationEmail = async (email, { name, orderId, total, items, address, city, state }) => {
   const rows = Array.isArray(items) ? items.map((item) => `
     <tr>
-      <td>${escapeHtml(item.name || 'OnlyOne Hairboss item')} <span class="muted">x${Number(item.quantity) || 1}</span></td>
+      <td>${escapeHtml(item.name || 'OnlyOne Hairboss item')} ${item.variant ? `<br><span class="muted" style="font-size:12px;">Variant: ${escapeHtml(item.variant)}</span>` : ''}</td>
+      <td>${Number(item.quantity) || 1}</td>
       <td class="right">${money((Number(item.price) || 0) * (Number(item.quantity) || 1))}</td>
     </tr>
   `).join('') : '';
 
   const { html, text } = buildEmail({
-    title: 'Order confirmed',
-    preheader: `Your order ${orderId} has been received.`,
+    title: 'Your Order Has Been Confirmed ✨',
+    preheader: `Your order ${orderId} has been confirmed.`,
     intro: `
-      <p>Hi ${escapeHtml(name || 'Hairboss')},</p>
-      <p>Your payment has been verified and order <strong>#${escapeHtml(orderId)}</strong> is now confirmed.</p>
+      <p>Hi Hairboss Queen,</p>
+      <p>Thank you for shopping with us! Your order has been received successfully. We’re preparing your items and will keep you updated every step of the way.</p>
+      <p><strong>Order Number:</strong> ${escapeHtml(orderId)}<br>
+      <strong>Order Date:</strong> ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
     `,
     extraHtml: `
-      <div class="panel">
+      <h3 style="margin-top:24px; font-size:14px; color:#1a120e;">🛒 Your Order Details</h3>
+      <div class="panel" style="margin-top:8px;">
         <table>
-          <thead><tr><th>Item</th><th class="right">Amount</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Qty</th>
+              <th class="right">Price</th>
+            </tr>
+          </thead>
           <tbody>
             ${rows}
-            <tr class="total"><td>Total paid</td><td class="right">${money(total)}</td></tr>
+            <tr style="border-top:1px solid rgba(153,85,68,0.22);"><td colspan="3" style="padding:4px 0;"></td></tr>
+            <tr class="muted">
+              <td>Subtotal</td>
+              <td></td>
+              <td class="right">${money(total)}</td>
+            </tr>
+            <tr class="muted">
+              <td>Shipping</td>
+              <td></td>
+              <td class="right">Free</td>
+            </tr>
+            <tr class="total" style="font-size:16px;">
+              <td>Total</td>
+              <td></td>
+              <td class="right">${money(total)}</td>
+            </tr>
           </tbody>
         </table>
       </div>
-      <h3>Delivery Address</h3>
-      <p>${escapeHtml(address)}<br>${escapeHtml(city)}, ${escapeHtml(state)}<br>Nigeria</p>
+      <h3 style="margin-top:24px; font-size:14px; color:#1a120e;">📍 Shipping Address</h3>
+      <p style="margin-top:6px; line-height:1.6;">
+        <strong>${escapeHtml(name || 'Hairboss Queen')}</strong><br>
+        ${escapeHtml(address)}<br>
+        ${escapeHtml(city)}, ${escapeHtml(state)}<br>
+        Nigeria
+      </p>
     `,
-    ctaLabel: 'Track Your Order',
+    ctaLabel: 'View Order Details',
     ctaUrl: `${FRONTEND_URL}/account`,
   });
 
   return enqueueEmail({
     event: 'order-confirmed',
     to: email,
-    subject: `Order confirmed: #${orderId}`,
+    subject: 'Your Order Has Been Confirmed ✨',
     html,
     text,
   });
@@ -364,52 +391,71 @@ export const sendOrderConfirmationEmail = async (email, { name, orderId, total, 
 
 export const sendOrderStatusUpdateEmail = async (email, { name, orderId, oldStatus, newStatus }) => {
   const { html, text } = buildEmail({
-    title: 'Order status updated',
-    preheader: `Order ${orderId} is now ${newStatus}.`,
+    title: 'Your Order Has Been Updated ✨',
+    preheader: `Your order ${orderId} is now ${newStatus}.`,
     intro: `
-      <p>Hi ${escapeHtml(name || 'Hairboss')},</p>
-      <p>Your order <strong>#${escapeHtml(orderId)}</strong> moved from <strong>${escapeHtml(oldStatus)}</strong> to <strong>${escapeHtml(newStatus)}</strong>.</p>
-      <p>We will keep you updated as your luxury unit moves through fulfillment.</p>
+      <p>Hi Hairboss Queen,</p>
+      <p>There’s an update on your recent order.</p>
+      <p><strong>Order Number:</strong> ${escapeHtml(orderId)}<br>
+      <strong>Current Status:</strong> ${escapeHtml(newStatus)}</p>
+      <p>You can track your package and check your order details anytime using the button below.</p>
     `,
-    ctaLabel: 'View Order',
+    ctaLabel: 'Track Order',
     ctaUrl: `${FRONTEND_URL}/account`,
   });
 
   return enqueueEmail({
     event: 'order-status',
     to: email,
-    subject: `Order #${orderId} is now ${newStatus}`,
+    subject: 'Your Order Has Been Updated ✨',
     html,
     text,
   });
 };
 
-export const sendAdminOrderNotificationEmail = async ({ name, orderId, total, items, address, city, state }) => {
+export const sendAdminOrderNotificationEmail = async ({ name, email, orderId, total, items, address, city, state }) => {
   const rows = Array.isArray(items) ? items.map((item) => `
     <tr>
-      <td>${escapeHtml(item.name || 'OnlyOne Hairboss item')} <span class="muted">x${Number(item.quantity) || 1}</span></td>
-      <td class="right">${money((Number(item.price) || 0) * (Number(item.quantity) || 1))}</td>
+      <td>${escapeHtml(item.name || 'OnlyOne Hairboss item')} ${item.variant ? `<span class="muted">(${escapeHtml(item.variant)})</span>` : ''}</td>
+      <td class="right">${Number(item.quantity) || 1}</td>
     </tr>
   `).join('') : '';
 
   const { html, text } = buildEmail({
-    title: 'New order received',
-    preheader: `Order ${orderId} was placed by ${name}.`,
+    title: `🚨 New Order Alert! Order #${orderId}`,
+    preheader: `New order alert from ${name}`,
     intro: `
-      <p>A new paid order <strong>#${escapeHtml(orderId)}</strong> was placed by <strong>${escapeHtml(name || 'Customer')}</strong>.</p>
+      <p>Hi Boss,</p>
+      <p>You have a new order waiting for fulfillment! A customer has just completed a purchase on OnlyOne Hairboss.</p>
     `,
     extraHtml: `
-      <div class="panel">
+      <h3 style="margin-top:24px; font-size:14px; color:#1a120e;">📋 Order Summary</h3>
+      <p style="margin-top:6px; line-height:1.6;">
+        <strong>Order Number:</strong> ${escapeHtml(orderId)}<br>
+        <strong>Customer Name:</strong> ${escapeHtml(name || 'Customer')} (${escapeHtml(email || 'No email')})<br>
+        <strong>Order Total:</strong> ${money(total)}
+      </p>
+      
+      <h3 style="margin-top:24px; font-size:14px; color:#1a120e;">📦 Items Ordered</h3>
+      <div class="panel" style="margin-top:8px;">
         <table>
-          <thead><tr><th>Item</th><th class="right">Amount</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th class="right">Qty</th>
+            </tr>
+          </thead>
           <tbody>
             ${rows}
-            <tr class="total"><td>Total value</td><td class="right">${money(total)}</td></tr>
           </tbody>
         </table>
       </div>
-      <h3>Shipping</h3>
-      <p>${escapeHtml(address)}<br>${escapeHtml(city)}, ${escapeHtml(state)}<br>Nigeria</p>
+      <h3 style="margin-top:24px; font-size:14px; color:#1a120e;">📍 Delivery Address</h3>
+      <p style="margin-top:6px; line-height:1.6;">
+        ${escapeHtml(address)}<br>
+        ${escapeHtml(city)}, ${escapeHtml(state)}<br>
+        Nigeria
+      </p>
     `,
     ctaLabel: 'Open Admin Orders',
     ctaUrl: `${FRONTEND_URL}/admin/orders`,
@@ -418,7 +464,7 @@ export const sendAdminOrderNotificationEmail = async ({ name, orderId, total, it
   return enqueueEmail({
     event: 'admin-order-alert',
     to: ADMIN_EMAIL,
-    subject: `New OnlyOne Hairboss order: #${orderId}`,
+    subject: `🚨 New Order Alert! Order #${orderId}`,
     html,
     text,
   });

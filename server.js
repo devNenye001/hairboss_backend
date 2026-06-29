@@ -66,6 +66,8 @@ app.use(helmet({
 
 const allowedOrigins = [
   'https://onlyonehairboss.vercel.app',
+  'https://onlyonehairboss.com',
+  'https://www.onlyonehairboss.com',
   'http://localhost:5173',
   'http://localhost:3000',
   ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean) : []),
@@ -851,6 +853,7 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
 
     sendAdminOrderNotificationEmail({
         name: payload.full_name,
+        email: payload.email,
         orderId: order.id,
         total,
         items,
