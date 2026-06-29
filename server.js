@@ -25,8 +25,8 @@ import {
 dotenv.config();
 
 const ALLOWED_COLUMNS = {
-  orders: ['id', 'user_id', 'full_name', 'email', 'phone', 'address', 'city', 'state', 'notes', 'total', 'status', 'payment_method', 'payment_proof', 'created_at'],
-  products: ['id', 'name', 'price', 'description', 'images', 'category', 'is_featured', 'in_stock', 'stock_count', 'created_at'],
+  orders: ['id', 'user_id', 'full_name', 'email', 'phone', 'address', 'city', 'state', 'notes', 'total', 'status', 'payment_method', 'payment_proof', 'shipping_method', 'shipping_fee', 'currency', 'created_at'],
+  products: ['id', 'name', 'price', 'description', 'images', 'category', 'is_featured', 'in_stock', 'stock_count', 'weight_g', 'created_at'],
   site_content: ['key', 'value'],
   profiles: ['id', 'email', 'full_name', 'role', 'created_at'],
   order_items: ['id', 'order_id', 'product_id', 'product_name', 'product_image', 'quantity', 'price']
@@ -557,8 +557,8 @@ app.post('/api/db/products', authenticateToken, requireAdmin, async (req, res) =
   const id = crypto.randomUUID();
   try {
     const sql = `
-      INSERT INTO products (id, name, price, description, images, category, is_featured, in_stock, stock_count)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO products (id, name, price, description, images, category, is_featured, in_stock, stock_count, weight_g)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `;
     const params = [
@@ -571,6 +571,7 @@ app.post('/api/db/products', authenticateToken, requireAdmin, async (req, res) =
       payload.is_featured || false,
       payload.in_stock !== false,
       payload.stock_count || 0,
+      Number(payload.weight_g) || 1000,
     ];
     const result = await query(sql, params);
     res.status(201).json({ data: result.rows[0] });
@@ -589,7 +590,7 @@ app.put('/api/db/products/update', authenticateToken, requireAdmin, async (req, 
 
   try {
     // Dynamically build the update fields to be safe and clean
-    const allowedFields = ['name', 'price', 'description', 'images', 'category', 'is_featured', 'in_stock', 'stock_count'];
+    const allowedFields = ['name', 'price', 'description', 'images', 'category', 'is_featured', 'in_stock', 'stock_count', 'weight_g'];
     const updateSets = [];
     const params = [];
     let counter = 1;
@@ -775,7 +776,8 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
       const flwAmount = Number(flwData?.data?.amount);
       const flwCurrency = flwData?.data?.currency || 'NGN';
       const flwStatus = flwData?.data?.status;
-      if (!flwResponse.ok || flwData.status !== 'success' || flwStatus !== 'successful' || flwAmount < total || flwCurrency !== 'NGN') {
+      const expectedCurrency = payload.currency || 'NGN';
+      if (!flwResponse.ok || flwData.status !== 'success' || flwStatus !== 'successful' || flwAmount < total || flwCurrency !== expectedCurrency) {
         return res.status(400).json({ error: 'Flutterwave payment verification failed.' });
       }
       verifiedPayment = {
@@ -797,8 +799,8 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
     const userId = req.user ? req.user.id : null;
 
     const orderSql = `
-      INSERT INTO orders (id, user_id, full_name, email, phone, address, city, state, total, status, payment_method, payment_proof, notes, shipping_method, shipping_fee)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      INSERT INTO orders (id, user_id, full_name, email, phone, address, city, state, total, status, payment_method, payment_proof, notes, shipping_method, shipping_fee, currency)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *
     `;
     const orderParams = [
@@ -817,6 +819,7 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
       payload.notes || '',
       payload.shipping_method || 'local',
       Number(payload.shipping_fee) || 0,
+      payload.currency || 'NGN',
     ];
 
     await query('BEGIN');
@@ -874,7 +877,8 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
         city: payload.city,
         state: payload.state,
         shippingMethod: order.shipping_method,
-        shippingFee: Number(order.shipping_fee) || 0
+        shippingFee: Number(order.shipping_fee) || 0,
+        currency: order.currency
       })
       .catch(err => console.error('Failed to queue order confirmation email:', err));
 
@@ -888,7 +892,8 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
         city: payload.city,
         state: payload.state,
         shippingMethod: order.shipping_method,
-        shippingFee: Number(order.shipping_fee) || 0
+        shippingFee: Number(order.shipping_fee) || 0,
+        currency: order.currency
       })
       .catch(err => console.error('Failed to queue admin order email:', err));
 

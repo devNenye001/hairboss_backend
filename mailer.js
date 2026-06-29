@@ -66,7 +66,7 @@ const escapeHtml = (value = '') => String(value)
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#039;');
 
-const money = (value) => `NGN ${Number(value || 0).toLocaleString('en-NG')}`;
+const money = (value) => `NGN ${Number(value || 0).toLocaleString('en-US')}`;
 
 const stripHtml = (html) => html
   .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -317,7 +317,8 @@ export const sendForgotPasswordEmail = async (email, resetUrl) => {
   });
 };
 
-export const sendOrderConfirmationEmail = async (email, { name, orderId, total, items, address, city, state, shippingMethod, shippingFee }) => {
+export const sendOrderConfirmationEmail = async (email, { name, orderId, total, items, address, city, state, shippingMethod, shippingFee, currency = 'NGN' }) => {
+  const money = (val) => `${currency} ${Number(val || 0).toLocaleString('en-US')}`;
   const rows = Array.isArray(items) ? items.map((item) => `
     <tr>
       <td>${escapeHtml(item.name || 'OnlyOne Hairboss item')} ${item.variant ? `<br><span class="muted" style="font-size:12px;">Variant: ${escapeHtml(item.variant)}</span>` : ''}</td>
@@ -417,7 +418,8 @@ export const sendOrderStatusUpdateEmail = async (email, { name, orderId, oldStat
   });
 };
 
-export const sendAdminOrderNotificationEmail = async ({ name, email, orderId, total, items, address, city, state, shippingMethod, shippingFee }) => {
+export const sendAdminOrderNotificationEmail = async ({ name, email, orderId, total, items, address, city, state, shippingMethod, shippingFee, currency = 'NGN' }) => {
+  const money = (val) => `${currency} ${Number(val || 0).toLocaleString('en-US')}`;
   const rows = Array.isArray(items) ? items.map((item) => `
     <tr>
       <td>${escapeHtml(item.name || 'OnlyOne Hairboss item')} ${item.variant ? `<span class="muted">(${escapeHtml(item.variant)})</span>` : ''}</td>

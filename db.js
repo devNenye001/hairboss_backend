@@ -70,6 +70,7 @@ export const initDb = async () => {
         is_featured BOOLEAN DEFAULT FALSE,
         in_stock BOOLEAN DEFAULT TRUE,
         stock_count INT DEFAULT 0,
+        weight_g INT DEFAULT 1000,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
@@ -92,13 +93,16 @@ export const initDb = async () => {
         notes TEXT DEFAULT '',
         shipping_method VARCHAR(100) DEFAULT 'local',
         shipping_fee NUMERIC DEFAULT 0,
+        currency VARCHAR(10) DEFAULT 'NGN',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
 
     // Schema migrations for existing databases
+    await query('ALTER TABLE products ADD COLUMN IF NOT EXISTS weight_g INT DEFAULT 1000;');
     await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_method VARCHAR(100) DEFAULT \'local\';');
     await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_fee NUMERIC DEFAULT 0;');
+    await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT \'NGN\';');
 
     await query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment_proof_unique
