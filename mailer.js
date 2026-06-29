@@ -108,7 +108,7 @@ const renderShell = ({ preheader, content }) => `<!doctype html>
     .right { text-align:right; }
     .total td { border-bottom:0; font-weight:700; color:#1a120e; }
     .muted { color:#7d6259; font-size:13px; }
-    .footer { padding:22px 30px; text-align:center; color:#8b746c; font-size:12px; background:#fff6f1; border-top:1px solid rgba(153,85,68,0.16); }
+    .footer { padding:12px 20px; text-align:center; color:#8b746c; font-size:12px; background:#fff6f1; border-top:1px solid rgba(153,85,68,0.16); }
     @media (max-width:520px) {
       .wrap { padding:0; }
       .body { padding:28px 20px; }
@@ -127,7 +127,7 @@ const renderShell = ({ preheader, content }) => `<!doctype html>
       </div>
       <div class="body">${content}</div>
       <div class="footer">
-        <p>&copy; ${new Date().getFullYear()} OnlyOneHairboss</p>
+        <p>&copy; ${new Date().getFullYear()} OnlyOneHairboss. All rights reserved.</p>
       </div>
     </div>
   </div>
@@ -395,8 +395,26 @@ export const sendOrderConfirmationEmail = async (email, { name, orderId, total, 
 };
 
 export const sendOrderStatusUpdateEmail = async (email, { name, orderId, oldStatus, newStatus }) => {
+  const statusLower = String(newStatus || '').toLowerCase();
+  let subject = 'Your Order Has Been Updated ✨';
+  let title = 'Your Order Has Been Updated ✨';
+  
+  if (statusLower === 'processing') {
+    subject = 'Your Order is being Processed ✨';
+    title = 'Your Order is being Processed ✨';
+  } else if (statusLower === 'shipped') {
+    subject = 'Your Order has been Shipped 🚚';
+    title = 'Your Order has been Shipped 🚚';
+  } else if (statusLower === 'delivered') {
+    subject = 'Your Order has been Delivered 🎉';
+    title = 'Your Order has been Delivered 🎉';
+  } else if (statusLower === 'cancelled') {
+    subject = 'Your Order has been Cancelled ⚠️';
+    title = 'Your Order has been Cancelled ⚠️';
+  }
+
   const { html, text } = buildEmail({
-    title: 'Your Order Has Been Updated ✨',
+    title,
     preheader: `Your order ${orderId} is now ${newStatus}.`,
     intro: `
       <p>Hi Hairboss Queen,</p>
@@ -412,7 +430,7 @@ export const sendOrderStatusUpdateEmail = async (email, { name, orderId, oldStat
   return enqueueEmail({
     event: 'order-status',
     to: email,
-    subject: 'Your Order Has Been Updated ✨',
+    subject,
     html,
     text,
   });

@@ -1186,12 +1186,12 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
       LIMIT 1
     `);
     if (topOverallRes.rows.length > 0) {
-      insights.push(`👑 '${topOverallRes.rows[0].product_name}' is your #1 best-selling wig overall, with a total of ${topOverallRes.rows[0].quantity_sold} units sold.`);
+      insights.push(`'${topOverallRes.rows[0].product_name}' is your #1 best-selling wig overall, with a total of ${topOverallRes.rows[0].quantity_sold} units sold.`);
     }
 
     // Top revenue category
     if (categorySalesRes.rows.length > 0) {
-      insights.push(`🔥 The '${categorySalesRes.rows[0].category || 'General'}' category is your highest-grossing product segment, generating ₦${parseFloat(categorySalesRes.rows[0].sales || 0).toLocaleString('en-US', { minimumFractionDigits: 0 })} in sales.`);
+      insights.push(`The '${categorySalesRes.rows[0].category || 'General'}' category is your highest-grossing product segment, generating ₦${parseFloat(categorySalesRes.rows[0].sales || 0).toLocaleString('en-US', { minimumFractionDigits: 0 })} in sales.`);
     }
 
     // Order health ratio
@@ -1202,14 +1202,14 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
     if (totalCountAll > 0) {
       const cancelRate = ((cancelledCount / totalCountAll) * 100).toFixed(1);
       if (cancelRate > 20) {
-        insights.push(`⚠️ Order cancellation rate is high at ${cancelRate}%. Check customer feedback or payment dropouts.`);
+        insights.push(`Order cancellation rate is high at ${cancelRate}%. Check customer feedback or payment dropouts.`);
       } else {
-        insights.push(`⚡ Order fulfillment health is excellent: only ${cancelRate}% of orders are cancelled.`);
+        insights.push(`Order fulfillment health is excellent: only ${cancelRate}% of orders are cancelled.`);
       }
     }
 
     // Revenue growth statement
-    insights.push(`📈 Weekly revenue stands at ₦${weeklyRevenue.toLocaleString()} and monthly revenue at ₦${monthlyRevenue.toLocaleString()}. Keep pushing!`);
+    insights.push(`Weekly revenue stands at ₦${weeklyRevenue.toLocaleString()} and monthly revenue at ₦${monthlyRevenue.toLocaleString()}. Keep pushing!`);
 
     res.json({
       revenue,
