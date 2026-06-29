@@ -7,7 +7,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const BRAND_NAME = 'OnlyOne Hairboss';
 const LOGO_URL = process.env.EMAIL_LOGO_URL || `${FRONTEND_URL}/logo1.svg`;
 const EMAIL_FROM = process.env.EMAIL_FROM || `"${BRAND_NAME}" <orders@onlyonehairboss.com>`;
-const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || process.env.EMAIL_FROM || undefined;
+const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || undefined;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || process.env.ORDER_ALERT_EMAIL || 'onlyonehairboss@gmail.com';
 const EMAIL_PROVIDER = (process.env.EMAIL_PROVIDER || (process.env.RESEND_API_KEY ? 'resend' : 'smtp')).toLowerCase();
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
@@ -124,6 +124,7 @@ const renderShell = ({ preheader, content }) => `<!doctype html>
     <div class="card">
       <div class="hero">
         <img class="logo" src="${LOGO_URL}" alt="${BRAND_NAME}">
+        <img class="profile-pic" src="${FRONTEND_URL}/hero-image.webp" alt="OnlyOne Hairboss Profile" style="width:70px; height:70px; border-radius:50%; object-fit:cover; border:2px solid #fff1ea; margin:12px auto 0; display:block;">
       </div>
       <div class="body">${content}</div>
       <div class="footer">
@@ -151,7 +152,7 @@ const buildEmail = ({ title, preheader, intro, ctaLabel, ctaUrl, extraHtml = '',
   return { html, text: stripHtml(html) };
 };
 
-const sendWithResend = async ({ to, subject, html, text }) => {
+const sendWithResend = async ({ to, subject, html, text, replyTo }) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), EMAIL_TIMEOUT_MS);
   try {
@@ -168,7 +169,7 @@ const sendWithResend = async ({ to, subject, html, text }) => {
         subject,
         html,
         text,
-        ...(EMAIL_REPLY_TO ? { reply_to: EMAIL_REPLY_TO } : {}),
+        reply_to: replyTo || EMAIL_REPLY_TO || undefined,
       }),
     });
     const body = await response.json().catch(() => ({}));
@@ -183,7 +184,7 @@ const sendWithResend = async ({ to, subject, html, text }) => {
   }
 };
 
-const sendWithSmtp = async ({ to, subject, html, text }) => {
+const sendWithSmtp = async ({ to, subject, html, text, replyTo }) => {
   if (!smtpTransporter) {
     throw new Error('SMTP transporter is not configured.');
   }
@@ -193,7 +194,7 @@ const sendWithSmtp = async ({ to, subject, html, text }) => {
     subject,
     html,
     text,
-    ...(EMAIL_REPLY_TO ? { replyTo: EMAIL_REPLY_TO } : {}),
+    replyTo: replyTo || EMAIL_REPLY_TO || undefined,
   });
 };
 
@@ -247,7 +248,7 @@ const processQueue = async () => {
   processing = false;
 };
 
-export const enqueueEmail = ({ event, to, subject, html, text }) => {
+export const enqueueEmail = ({ event, to, subject, html, text, replyTo }) => {
   if (!to || !subject || !html) {
     console.error('Mailer: email enqueue skipped due to missing required fields.', { event, to, subject });
     return Promise.resolve({ queued: false });
@@ -256,7 +257,7 @@ export const enqueueEmail = ({ event, to, subject, html, text }) => {
   queue.push({
     event: event || 'transactional',
     attempt: 1,
-    email: { to, subject, html, text: text || stripHtml(html) },
+    email: { to, subject, html, text: text || stripHtml(html), replyTo },
   });
   setTimeout(() => processQueue().catch((error) => console.error('Mailer: queue processor error:', error)), 0);
   return Promise.resolve({ queued: true });
@@ -386,6 +387,7 @@ export const sendOrderConfirmationEmail = async (email, { name, orderId, total, 
     subject: 'Your Order Has Been Confirmed ✨',
     html,
     text,
+    replyTo: 'onlyonehairboss@gmail.com',
   });
 };
 
