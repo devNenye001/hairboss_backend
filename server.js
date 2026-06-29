@@ -10,6 +10,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
+import { v2 as cloudinary } from 'cloudinary';
 
 import { initDb, query } from './db.js';
 import {
@@ -57,6 +58,28 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
   console.log('Created uploads directory:', uploadsDir);
+}
+
+// Configure Cloudinary
+const isCloudinaryActive = Boolean(
+  (process.env.CLOUDINARY_URL && !process.env.CLOUDINARY_URL.includes('<your_api_key>')) ||
+  (process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)
+);
+
+if (isCloudinaryActive) {
+  if (process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'difdrihgw',
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET,
+    });
+    console.log('Cloudinary configured via API keys.');
+  } else {
+    // Cloudinary automatically picks up CLOUDINARY_URL natively
+    console.log('Cloudinary configured via CLOUDINARY_URL.');
+  }
+} else {
+  console.log('Using local disk storage for uploaded files.');
 }
 
 // Security Configuration
@@ -1261,10 +1284,34 @@ const upload = multer({
 });
 
 // Image upload route (Admin only)
-app.post('/api/storage/upload', authenticateToken, requireAdmin, upload.single('image'), (req, res) => {
+app.post('/api/storage/upload', authenticateToken, requireAdmin, upload.single('image'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No image file uploaded.' });
   }
+
+  const isCloudinaryActive = Boolean(
+    (process.env.CLOUDINARY_URL && !process.env.CLOUDINARY_URL.includes('<your_api_key>')) ||
+    (process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)
+  );
+
+  if (isCloudinaryActive) {
+    try {
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: 'hairboss',
+        resource_type: 'auto',
+      });
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (err) {
+        console.error('Failed to delete temp file:', err);
+      }
+      return res.json({ path: result.secure_url });
+    } catch (error) {
+      console.error('Cloudinary upload error:', error);
+      return res.status(500).json({ error: 'Cloudinary upload failed: ' + error.message });
+    }
+  }
+
   res.json({ path: req.file.filename });
 });
 
@@ -1309,6 +1356,30 @@ app.post('/api/storage/upload/chunk', authenticateToken, requireAdmin, multer().
       if (stats.size > 20 * 1024 * 1024) {
         fs.unlinkSync(finalPath);
         return res.status(400).json({ error: 'File size exceeds maximum limit of 20MB.' });
+      }
+
+      const isCloudinaryActive = Boolean(
+        (process.env.CLOUDINARY_URL && !process.env.CLOUDINARY_URL.includes('<your_api_key>')) ||
+        (process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)
+      );
+
+      if (isCloudinaryActive) {
+        try {
+          const result = await cloudinary.uploader.upload(finalPath, {
+            folder: 'hairboss',
+            resource_type: 'auto',
+          });
+          try {
+            fs.unlinkSync(finalPath);
+          } catch (err) {
+            console.error('Failed to delete temp video file:', err);
+          }
+          return res.json({ path: result.secure_url, completed: true });
+        } catch (error) {
+          console.error('Cloudinary chunk upload completion error:', error);
+          try { fs.unlinkSync(finalPath); } catch (e) {}
+          return res.status(500).json({ error: 'Cloudinary upload failed: ' + error.message });
+        }
       }
 
       return res.json({ path: safeFileName, completed: true });
