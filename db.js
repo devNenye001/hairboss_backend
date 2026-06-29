@@ -90,9 +90,15 @@ export const initDb = async () => {
         payment_method VARCHAR(100) DEFAULT 'transfer',
         payment_proof VARCHAR(255) DEFAULT '',
         notes TEXT DEFAULT '',
+        shipping_method VARCHAR(100) DEFAULT 'local',
+        shipping_fee NUMERIC DEFAULT 0,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+
+    // Schema migrations for existing databases
+    await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_method VARCHAR(100) DEFAULT \'local\';');
+    await query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_fee NUMERIC DEFAULT 0;');
 
     await query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment_proof_unique

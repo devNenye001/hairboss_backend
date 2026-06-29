@@ -5,7 +5,7 @@ dotenv.config();
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const BRAND_NAME = 'OnlyOne Hairboss';
-const LOGO_URL = process.env.EMAIL_LOGO_URL || `${FRONTEND_URL}/logo1.svg`;
+const LOGO_URL = process.env.EMAIL_LOGO_URL || `${FRONTEND_URL}/logo.svg`;
 const EMAIL_FROM = process.env.EMAIL_FROM || `"${BRAND_NAME}" <orders@onlyonehairboss.com>`;
 const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || undefined;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || process.env.ORDER_ALERT_EMAIL || 'onlyonehairboss@gmail.com';
@@ -93,7 +93,7 @@ const renderShell = ({ preheader, content }) => `<!doctype html>
     .preheader { display:none; max-height:0; overflow:hidden; opacity:0; color:transparent; }
     .wrap { width:100%; background:#fff1ea; padding:32px 12px; }
     .card { max-width:640px; margin:0 auto; background:#fffaf7; border:1px solid rgba(153,85,68,0.18); }
-    .hero { padding:40px 20px; text-align:center; background-color:#0c0806; background-image:linear-gradient(rgba(12, 8, 6, 0.7), rgba(12, 8, 6, 0.7)), url('${FRONTEND_URL}/banner.svg'); background-size:cover; background-position:center; }
+    .hero { padding:40px 20px; text-align:center; background-color:#0c0806; background-image:linear-gradient(rgba(12, 8, 6, 0.2), rgba(12, 8, 6, 0.2)), url('${FRONTEND_URL}/banner.svg'); background-size:cover; background-position:center; }
     .logo { max-width:140px; height:auto; margin:0 auto; display:block; }
     .body { padding:34px 30px; font-size:15px; line-height:1.7; color:#3a2a25; }
     h2 { margin:0 0 14px; color:#1a120e; font-size:28px; line-height:1.18; font-family:Georgia, 'Times New Roman', serif; font-weight:400; }
@@ -319,7 +319,7 @@ export const sendForgotPasswordEmail = async (email, resetUrl) => {
   });
 };
 
-export const sendOrderConfirmationEmail = async (email, { name, orderId, total, items, address, city, state }) => {
+export const sendOrderConfirmationEmail = async (email, { name, orderId, total, items, address, city, state, shippingMethod, shippingFee }) => {
   const rows = Array.isArray(items) ? items.map((item) => `
     <tr>
       <td>${escapeHtml(item.name || 'OnlyOne Hairboss item')} ${item.variant ? `<br><span class="muted" style="font-size:12px;">Variant: ${escapeHtml(item.variant)}</span>` : ''}</td>
@@ -327,6 +327,10 @@ export const sendOrderConfirmationEmail = async (email, { name, orderId, total, 
       <td class="right">${money((Number(item.price) || 0) * (Number(item.quantity) || 1))}</td>
     </tr>
   `).join('') : '';
+
+  const shippingFeeVal = Number(shippingFee) || 0;
+  const subtotalVal = Number(total) - shippingFeeVal;
+  const shippingLabel = shippingMethod === 'international' ? 'DHL (International)' : 'GIG Logistics (Local)';
 
   const { html, text } = buildEmail({
     title: 'Your Order Has Been Confirmed ✨',
@@ -354,12 +358,12 @@ export const sendOrderConfirmationEmail = async (email, { name, orderId, total, 
             <tr class="muted">
               <td>Subtotal</td>
               <td></td>
-              <td class="right">${money(total)}</td>
+              <td class="right">${money(subtotalVal)}</td>
             </tr>
             <tr class="muted">
-              <td>Shipping</td>
+              <td>Shipping (${shippingLabel})</td>
               <td></td>
-              <td class="right">Free</td>
+              <td class="right">${shippingFeeVal > 0 ? money(shippingFeeVal) : 'Free'}</td>
             </tr>
             <tr class="total" style="font-size:16px;">
               <td>Total</td>
@@ -415,13 +419,17 @@ export const sendOrderStatusUpdateEmail = async (email, { name, orderId, oldStat
   });
 };
 
-export const sendAdminOrderNotificationEmail = async ({ name, email, orderId, total, items, address, city, state }) => {
+export const sendAdminOrderNotificationEmail = async ({ name, email, orderId, total, items, address, city, state, shippingMethod, shippingFee }) => {
   const rows = Array.isArray(items) ? items.map((item) => `
     <tr>
       <td>${escapeHtml(item.name || 'OnlyOne Hairboss item')} ${item.variant ? `<span class="muted">(${escapeHtml(item.variant)})</span>` : ''}</td>
       <td class="right">${Number(item.quantity) || 1}</td>
     </tr>
   `).join('') : '';
+
+  const shippingFeeVal = Number(shippingFee) || 0;
+  const subtotalVal = Number(total) - shippingFeeVal;
+  const shippingLabel = shippingMethod === 'international' ? 'DHL (International)' : 'GIG Logistics (Local)';
 
   const { html, text } = buildEmail({
     title: `🚨 New Order Alert! Order #${orderId}`,
@@ -435,6 +443,8 @@ export const sendAdminOrderNotificationEmail = async ({ name, email, orderId, to
       <p style="margin-top:6px; line-height:1.6;">
         <strong>Order Number:</strong> ${escapeHtml(orderId)}<br>
         <strong>Customer Name:</strong> ${escapeHtml(name || 'Customer')} (${escapeHtml(email || 'No email')})<br>
+        <strong>Subtotal:</strong> ${money(subtotalVal)}<br>
+        <strong>Shipping (${shippingLabel}):</strong> ${shippingFeeVal > 0 ? money(shippingFeeVal) : 'Free'}<br>
         <strong>Order Total:</strong> ${money(total)}
       </p>
       

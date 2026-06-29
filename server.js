@@ -774,8 +774,8 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
     const userId = req.user ? req.user.id : null;
 
     const orderSql = `
-      INSERT INTO orders (id, user_id, full_name, email, phone, address, city, state, total, status, payment_method, payment_proof, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      INSERT INTO orders (id, user_id, full_name, email, phone, address, city, state, total, status, payment_method, payment_proof, notes, shipping_method, shipping_fee)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *
     `;
     const orderParams = [
@@ -792,6 +792,8 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
       'flutterwave',
       transactionId,
       payload.notes || '',
+      payload.shipping_method || 'local',
+      Number(payload.shipping_fee) || 0,
     ];
 
     await query('BEGIN');
@@ -847,7 +849,9 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
         items,
         address: payload.address,
         city: payload.city,
-        state: payload.state
+        state: payload.state,
+        shippingMethod: order.shipping_method,
+        shippingFee: Number(order.shipping_fee) || 0
       })
       .catch(err => console.error('Failed to queue order confirmation email:', err));
 
@@ -859,7 +863,9 @@ app.post('/api/checkout/verify-payment', authenticateToken, async (req, res) => 
         items,
         address: payload.address,
         city: payload.city,
-        state: payload.state
+        state: payload.state,
+        shippingMethod: order.shipping_method,
+        shippingFee: Number(order.shipping_fee) || 0
       })
       .catch(err => console.error('Failed to queue admin order email:', err));
 
